@@ -145,10 +145,11 @@ jobs:
         env:
           SRCCLR_API_TOKEN: ${{ secrets.VERACODE_AGENT_TOKEN }}
           JAVA_OPTS: -Xms2g -Xmx4g
-        uses: veracode/veracode-sca@v2.1.15
+        uses: veracode/veracode-sca@task/SAI-1272_add_json_flag_support # TODO: update this when tag is cut
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           create-issues: false
+          json-output: true # Default this to false, keep true for fix-sca testing
           recursive: true
           allow-dirty: true
           breakBuildOnPolicyFindings: ${{ github.event.client_payload.user_config.break_build_policy_findings }}
