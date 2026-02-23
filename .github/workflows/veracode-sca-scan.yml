@@ -149,7 +149,7 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           create-issues: false
-          json-output: true # Default this to false, keep true for fix-sca testing
+          json-output: true # This value will eventually be dynamic based on sca-fix is enabled / disabled
           recursive: true
           allow-dirty: true
           breakBuildOnPolicyFindings: ${{ github.event.client_payload.user_config.break_build_policy_findings }}
