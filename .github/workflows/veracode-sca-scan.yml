@@ -211,7 +211,7 @@ jobs:
         if: steps.check-pr.outputs.has-pr == 'true'
         uses: actions/download-artifact@v4
         with:
-          name: sca-results
+          name: 'Veracode Agent Based SCA Results'
           path: 'veracode-client-repo'
 
       - name: Run Veracode CLI to generate SCA vuln list
@@ -230,7 +230,7 @@ jobs:
           export PATH="veracode-helper/helper/cli/$cliFileName:$PATH"
           cd $working_path
           client_repo_path="$working_path/veracode-client-repo"
-          veracode fix sca "$client_repo_path" -r "$client_repo_path/sca-result.transitive.mod.json" --list-only --json "veracode-cli.vuln.listing.json"
+          veracode fix sca "$client_repo_path" -r "$client_repo_path/scaResults.json" --list-only --json "veracode-cli.vuln.listing.json"
           if [ $? -eq 0 ]; then
             echo "veracode-cli_run=success" >> "$GITHUB_OUTPUT"
           else
