@@ -153,3 +153,120 @@ jobs:
           allow-dirty: true
           breakBuildOnPolicyFindings: ${{ github.event.client_payload.user_config.break_build_policy_findings }}
           debug: ${{ github.event.client_payload.user_config.debug }}
+  generate-vuln-list:
+    needs: veracode-sca-scan
+    if: success()
+    runs-on: ${{ fromJSON(github.event.client_payload.user_config.default_runs_on) }}
+    name: Generate SCA vuln list
+    timeout-minutes: 30
+    env:
+      VERACODE_API_KEY_ID: '${{ secrets.VERACODE_API_ID }}'
+      VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
+
+    steps:
+      - name: Check if veracode-sca-fix is enabled
+        id: check-sca-fix-enablement
+        run: |
+          if [ -n "${{ github.event.client_payload.user_config.sca_fix_enabled }}" ]; then
+            if [ "${{ github.event.client_payload.user_config.sca_fix_enabled }}" = "true" ]; then
+              echo "veracode-sca-fix=true" >> $GITHUB_OUTPUT
+            else
+              echo "::warning title=veracode-sca-fix set to false::veracode-sca-fix config not enabled. Skip rest of steps to generate sca vuln list"
+              echo "veracode-sca-fix=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "veracode-sca-fix is NOT enabled, skipping the rest of the steps"
+            echo "::warning title=veracode-sca-fix not set::veracode-sca-fix config not set. Skip rest of steps to generate sca vuln list"
+            echo "veracode-sca-fix=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check if PR number exists
+        if: steps.check-sca-fix-enablement.outputs.veracode-sca-fix == 'true'
+        id: check-pr
+        run: |
+          if [ -n "${{ github.event.client_payload.pr_number }}" ]; then
+            echo "has-pr=true" >> $GITHUB_OUTPUT
+          else
+            echo "No PR number found, skipping the rest of the steps"
+            echo "::warning title=No PR found::Missing pull request number. Skip rest of steps to generate sca vuln list"
+            echo "has-pr=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check out client repo
+        if: steps.check-pr.outputs.has-pr == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.repository.full_name }}
+          ref: ${{ github.event.client_payload.repository.branch }}
+          token: ${{ github.event.client_payload.token }}
+          path: 'veracode-client-repo'
+
+      - name: Check out to get veracode CLI
+        if: steps.check-pr.outputs.has-pr == 'true'
+        uses: actions/checkout@v4
+        with:
+          path: 'veracode-helper'
+
+      - name: Download Veracode SCA json results
+        if: steps.check-pr.outputs.has-pr == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: sca-results
+          path: 'veracode-client-repo'
+
+      - name: Run Veracode CLI to generate SCA vuln list
+        if: steps.check-pr.outputs.has-pr == 'true'
+        id: generate-vuln-list
+        shell: bash
+        run: |
+          working_path=$(pwd)
+          echo "working_dir=$working_path" >> "$GITHUB_OUTPUT"
+
+          cd veracode-helper/helper/cli
+          cliFile=$(ls -1 *.tar.gz | head -n 1)
+          cliFileName=$(echo "$cliFile" | cut -c 1-$((${#cliFile}-7)))
+          tar -zxvf $cliFile
+          cd $cliFileName
+          export PATH="veracode-helper/helper/cli/$cliFileName:$PATH"
+          cd $working_path
+          client_repo_path="$working_path/veracode-client-repo"
+          veracode fix sca "$client_repo_path" -r "$client_repo_path/sca-result.transitive.mod.json" --list-only --json "veracode-cli.vuln.listing.json"
+          if [ $? -eq 0 ]; then
+            echo "veracode-cli_run=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "veracode-cli_run=failure" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload the Veracode SCA Vulnerability List (JSON)
+        if: steps.generate-vuln-list.outputs.veracode-cli_run == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-vuln-listing-json
+          path: veracode-cli.vuln.listing.json
+          if-no-files-found: error
+
+      - name: Create SCA Vuln list metadata
+        if: steps.generate-vuln-list.outputs.veracode-cli_run == 'success'
+        id: create-vuln-list-metadata-json
+        run: |
+          echo '{
+            "repository": {
+              "branch": "${{ github.event.client_payload.repository.branch }}",
+              "name": "${{ github.event.client_payload.repository.name }}",
+              "owner": "${{ github.event.client_payload.repository.owner }}",
+              "full_name": "${{ github.event.client_payload.repository.full_name }}"
+            },
+            "profile_name": "${{ github.event.client_payload.user_config.profile_name }}",
+            "pull_request": {
+              "num": "${{ github.event.client_payload.pr_number || 0 }}"
+            }
+          }' > sca-vuln-listing-metadata.json
+        shell: bash
+
+      - name: Save SCA Vuln list metadata
+        if: steps.generate-vuln-list.outputs.veracode-cli_run == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-vuln-listing-metadata
+          path: sca-vuln-listing-metadata.json
+          if-no-files-found: error
