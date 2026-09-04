@@ -109,6 +109,10 @@ jobs:
           fi
           PACKAGE_CMD="veracode package --source source-code --output veracode-artifacts --trust"
 
+          if [[ "${{ inputs.event_name }}" =~ "pipeline" ]]; then
+            PACKAGE_CMD="$PACKAGE_CMD --skip-packagers sql,cobol"
+          fi
+
           if [[ "${{ inputs.debug }}" == "true" ]]; then
             PACKAGE_CMD="$PACKAGE_CMD --verbose"
           fi
@@ -262,6 +266,10 @@ jobs:
 
           if ("${{ inputs.debug }}" -eq "true") {
             $packageArgs += "--verbose"
+          }
+
+          if ("${{ inputs.event_name }}" -like "*pipeline*") {
+            $packageArgs += "--skip-packagers sql,cobol"
           }
 
           Write-Host "Running: veracode $($packageArgs -join ' ')"
